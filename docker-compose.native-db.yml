@@ -1,0 +1,39 @@
+# Variante de docker-compose.yml para cuando MySQL corre NATIVO en el host
+# (instalado directo en el VPS, o WAMP/XAMPP en desarrollo) en vez de en un
+# contenedor. Solo levanta "backend" y "nginx"; no incluye el servicio "mysql".
+#
+# Uso:
+#   docker compose -f docker-compose.native-db.yml up -d --build
+#
+# El backend se conecta al MySQL del host vía "host.docker.internal", que Docker
+# resuelve a la IP del host tanto en Docker Desktop (Windows/Mac) como en Linux
+# (gracias a extra_hosts). En DATABASE_URL (.env.production) usar ese host:
+#   DATABASE_URL=mysql://usuario:password@host.docker.internal:3306/ssvr
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks:
+      - ssvr
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - '${NGINX_PORT:-80}:80'
+    volumes:
+      - ./deploy/nginx/docker.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../SSVR-frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+    networks:
+      - ssvr
+
+networks:
+  ssvr:

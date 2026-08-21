@@ -1,0 +1,58 @@
+services:
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    # MYSQL_USER/MYSQL_PASSWORD (definidos en .env.production) hacen que la imagen
+    # oficial de mysql cree ese usuario con permisos sobre MYSQL_DATABASE en el
+    # primer arranque; la app se conecta con ese usuario, no con root.
+    env_file: .env.production
+    environment:
+      MYSQL_DATABASE: ssvr
+    # Expuesto al host para administración/backups. En el VPS, restringir el puerto 3306
+    # con el firewall (ufw/security group) a IPs de confianza o quitar este mapeo.
+    # MYSQL_PORT permite remapearlo (p. ej. en local si 3306 ya está ocupado) sin tocar este archivo.
+    ports:
+      - '${MYSQL_PORT:-3306}:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./ssvr.sql:/docker-entrypoint-initdb.d/ssvr.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h localhost -uroot -p"$$MYSQL_ROOT_PASSWORD"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - ssvr
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - ssvr
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    # NGINX_PORT permite remapearlo (p. ej. en local si 80 ya está ocupado) sin tocar este archivo.
+    ports:
+      - '${NGINX_PORT:-80}:80'
+    volumes:
+      - ./deploy/nginx/docker.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../SSVR-frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+    networks:
+      - ssvr
+
+networks:
+  ssvr:
+
+volumes:
+  mysql_data:
