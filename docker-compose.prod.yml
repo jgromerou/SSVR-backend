@@ -1,0 +1,113 @@
+# Variante de docker-compose.yml para producción con MySQL corriendo EN
+# DOCKER (no nativo del host). Levanta los tres servicios: "mysql", "backend"
+# y "nginx", igual que docker-compose.yml, pero con endurecimiento pensado
+# para un VPS expuesto a internet:
+#
+#   - El puerto de MySQL NO se publica al host: solo es alcanzable desde
+#     "backend" a través de la red interna "ssvr". No hay forma de conectarse
+#     a la base desde fuera del VPS ni siquiera con el puerto correcto.
+#   - La imagen oficial de mysql ya aplica, por defecto, lo mismo que hace
+#     "mysql_secure_installation": no crea usuarios anónimos, no crea la
+#     base "test", y la cuenta "root" solo puede loguearse como
+#     'root'@'localhost' (nunca 'root'@'%'), o sea nunca por red. No hace
+#     falta correr el script a mano.
+#   - La app se conecta con MYSQL_USER, un usuario sin privilegios de root
+#     y con permisos limitados a la base "ssvr" (la imagen lo crea así
+#     automáticamente en el primer arranque a partir de las variables de
+#     entorno). "root" solo lo usa el healthcheck, desde dentro del propio
+#     contenedor.
+#   - "no-new-privileges" en los tres servicios evita que un proceso dentro
+#     del contenedor escale privilegios aunque haya un binario setuid.
+#
+# En DATABASE_URL (.env.production) usar el nombre del servicio como host:
+#   DATABASE_URL=mysql://usuario:password@mysql:3306/ssvr
+#
+# Uso:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Para administrar la base (backups, consultas) no hay puerto publicado;
+# entrar al contenedor:
+#   docker compose -f docker-compose.prod.yml exec mysql mysql -u root -p
+
+services:
+
+  mysql:
+    image: mysql:8
+    container_name: ssvr_mysql
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+    # MYSQL_USER/MYSQL_PASSWORD (definidos en .env.production) hacen que la imagen
+    # oficial de mysql cree ese usuario con permisos sobre MYSQL_DATABASE en el
+    # primer arranque; la app se conecta con ese usuario, no con root.
+    env_file:
+      - .env.production
+    environment:
+      MYSQL_DATABASE: ssvr
+
+    security_opt:
+      - no-new-privileges:true
+
+    # Sin "ports": no se publica el 3306 al host. Solo "backend" puede
+    # alcanzarlo, vía la red "ssvr_network".
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./ssvr.sql:/docker-entrypoint-initdb.d/ssvr.sql:ro
+
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h localhost -uroot -p"$$MYSQL_ROOT_PASSWORD"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+    networks:
+      - ssvr_network
+
+
+  backend:
+    build: .
+    container_name: ssvr_backend
+    restart: unless-stopped
+
+    env_file:
+      - .env.production
+
+    security_opt:
+      - no-new-privileges:true
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    networks:
+      - ssvr_network
+
+
+  nginx:
+    image: nginx:alpine
+    container_name: ssvr_nginx
+    restart: unless-stopped
+
+    security_opt:
+      - no-new-privileges:true
+
+    ports:
+      - "80:80"
+
+    volumes:
+      - ../SSVR-frontend/dist:/usr/share/nginx/html:ro
+      - ./deploy/nginx/docker.conf:/etc/nginx/conf.d/default.conf:ro
+
+    depends_on:
+      - backend
+
+    networks:
+      - ssvr_network
+
+
+networks:
+  ssvr_network:
+
+
+volumes:
+  mysql_data:
