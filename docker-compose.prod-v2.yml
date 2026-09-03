@@ -23,7 +23,7 @@ services:
       - no-new-privileges:true
 
     ports:
-      - "192.168.5.30:3306:3306"
+      - "192.168.5.220:3306:3306"
 
     volumes:
       - mysql_data:/var/lib/mysql
