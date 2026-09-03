@@ -40,6 +40,16 @@ Todo en contenedores, incluida la base. No hace falta tener Node ni MySQL instal
 
 Para actualizar tras un cambio de código: `docker compose up -d --build backend`. Para arrancar de cero (borra los datos): `docker compose down -v && docker compose up -d --build`.
 
+### Opción A endurecida para VPS público: `docker-compose.prod.yml`
+
+`docker-compose.yml` publica el puerto de MySQL al host (`${MYSQL_PORT:-3306}:3306`), pensado para poder conectarse desde afuera con un cliente (DBeaver, MySQL Workbench) durante desarrollo. En un VPS expuesto a internet conviene no publicarlo. `docker-compose.prod.yml` es la misma Opción A sin ese puerto público (solo alcanzable desde `backend` por la red interna) y con `no-new-privileges` en los tres servicios:
+
+```
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+La imagen oficial de `mysql` ya aplica por defecto lo que hace `mysql_secure_installation` (sin usuarios anónimos, sin base `test`, `root` solo loguea como `'root'@'localhost'`, nunca por red), así que no hace falta correrlo a mano. Para administrar la base sin puerto publicado: `docker compose -f docker-compose.prod.yml exec mysql mysql -u root -p`.
+
 ## Opción B: Docker (backend + nginx) + MySQL nativo del host
 
 Para cuando MySQL ya corre instalado directo en la máquina (el VPS, o en desarrollo un WAMP/XAMPP local) en vez de en un contenedor — por ejemplo porque ya lo usás para otras apps, o es un servicio administrado del proveedor.
