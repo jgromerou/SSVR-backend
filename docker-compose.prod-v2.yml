@@ -22,6 +22,9 @@ services:
     security_opt:
       - no-new-privileges:true
 
+    ports:
+      - "192.168.5.30:3306:3306"
+
     volumes:
       - mysql_data:/var/lib/mysql
       - ./ssvr.sql:/docker-entrypoint-initdb.d/ssvr.sql:ro
@@ -97,7 +100,7 @@ networks:
 
   db_network:
     driver: bridge
-    internal: true
+    #internal: true - Red estaba diseñada precisamente para que MySQL fuese inaccesible desde fuera de Docker.
 
 
 volumes:
